@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Checkout WebDriverAgent
         uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
         run: ls /Applications/ | grep Xcode
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Show Xcode version
         run: xcodebuild -version
