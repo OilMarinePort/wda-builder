@@ -1,0 +1,54 @@
+name: Build WebDriverAgent
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout WebDriverAgent
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: master
+
+      - name: List available Xcode versions
+        run: ls /Applications/ | grep Xcode
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build WebDriverAgent
+        run: |
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64
+
+      - name: Package WDA
+        run: |
+          WDA_PATH=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
+          echo "Found WDA at: $WDA_PATH"
+          if [ -z "$WDA_PATH" ]; then
+            echo "WDA app not found, listing build directory:"
+            find ./build -name "*.app" -type d
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -r "$WDA_PATH" Payload/
+          zip -r WebDriverAgentRunner.ipa Payload/
+          ls -la WebDriverAgentRunner.ipa
+
+      - name: Upload WDA IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebDriverAgentRunner
+          path: WebDriverAgentRunner.ipa
+          retention-days: 30
