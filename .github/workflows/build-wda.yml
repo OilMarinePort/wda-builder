@@ -1,4 +1,4 @@
-name: Build Signed WebDriverAgent
+name: Build WDA
 on:
   workflow_dispatch:
 jobs:
@@ -9,27 +9,40 @@ jobs:
         with:
           repository: appium/WebDriverAgent
           ref: master
-      - name: Select Xcode
+
+      - name: Setup Xcode
         run: |
           XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
-      - name: Build WDA
+
+      - name: Build
         run: |
-          xcodebuild build-for-testing -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner -destination 'generic/platform=iOS' -derivedDataPath ./build CODE_SIGNING_ALLOWED=NO ARCHS=arm64
-      - name: Sign and Package
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64 | tail -5
+
+      - name: Package
         run: |
-          WDA_PATH=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
-          echo "WDA: $WDA_PATH"
-          test -n "$WDA_PATH" || exit 1
-          printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>get-task-allow</key><true/><key>platform-application</key><true/></dict></plist>' > ent.plist
-          find "$WDA_PATH/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - --timestamp=none {} \; 2>/dev/null || true
-          codesign --force --sign - --entitlements ent.plist --timestamp=none "$WDA_PATH"
-          mkdir -p Payload && cp -r "$WDA_PATH" Payload/
-          zip -r WebDriverAgentRunner-signed.ipa Payload/
-          ls -la WebDriverAgentRunner-signed.ipa
+          APP=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
+          XCTESTRUN=$(find ./build -name "*.xctestrun" -type f | head -1)
+          echo "APP=$APP"
+          echo "XCTESTRUN=$XCTESTRUN"
+          mkdir -p output
+          cp -r "$APP" output/
+          [ -n "$XCTESTRUN" ] && cp "$XCTESTRUN" output/
+          TEST=$(find ./build -name "WebDriverAgentRunner.xctest" -type d | head -1)
+          [ -n "$TEST" ] && cp -r "$TEST" output/
+          find output -maxdepth 2
+          cd output && zip -r ../wda-bundle.zip . && cd ..
+          ls -la wda-bundle.zip
+
       - uses: actions/upload-artifact@v4
         with:
-          name: WebDriverAgentRunner-signed
-          path: WebDriverAgentRunner-signed.ipa
+          name: wda-bundle
+          path: wda-bundle.zip
           retention-days: 30
