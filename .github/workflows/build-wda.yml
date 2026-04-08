@@ -1,61 +1,35 @@
-name: Build WebDriverAgent
-
+name: Build Signed WebDriverAgent
 on:
   workflow_dispatch:
-
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
     steps:
-      - name: Checkout WebDriverAgent
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: appium/WebDriverAgent
           ref: master
-
-      - name: List available Xcode versions
-        run: ls /Applications/ | grep Xcode
-
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
-
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Build WebDriverAgent
         run: |
-          xcodebuild build-for-testing \
-            -project WebDriverAgent.xcodeproj \
-            -scheme WebDriverAgentRunner \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath ./build \
-            CODE_SIGNING_ALLOWED=NO \
-            ARCHS=arm64
-
-      - name: Package WDA
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+      - name: Build WDA
+        run: |
+          xcodebuild build-for-testing -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner -destination 'generic/platform=iOS' -derivedDataPath ./build CODE_SIGNING_ALLOWED=NO ARCHS=arm64
+      - name: Sign and Package
         run: |
           WDA_PATH=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
-          echo "Found WDA at: $WDA_PATH"
-          if [ -z "$WDA_PATH" ]; then
-            echo "WDA app not found, listing build directory:"
-            find ./build -name "*.app" -type d
-            exit 1
-          fi
-
-          echo "Frameworks included:"
-          ls -la "$WDA_PATH/Frameworks/" || echo "No frameworks dir"
-
-          echo "Runner bundle ID:"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$WDA_PATH/Info.plist"
-
-          mkdir -p Payload
-          cp -r "$WDA_PATH" Payload/
-          zip -r WebDriverAgentRunner.ipa Payload/
-          ls -la WebDriverAgentRunner.ipa
-
-      - name: Upload WDA IPA
-        uses: actions/upload-artifact@v4
+          echo "WDA: $WDA_PATH"
+          test -n "$WDA_PATH" || exit 1
+          printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>get-task-allow</key><true/><key>platform-application</key><true/></dict></plist>' > ent.plist
+          find "$WDA_PATH/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - --timestamp=none {} \; 2>/dev/null || true
+          codesign --force --sign - --entitlements ent.plist --timestamp=none "$WDA_PATH"
+          mkdir -p Payload && cp -r "$WDA_PATH" Payload/
+          zip -r WebDriverAgentRunner-signed.ipa Payload/
+          ls -la WebDriverAgentRunner-signed.ipa
+      - uses: actions/upload-artifact@v4
         with:
-          name: WebDriverAgentRunner
-          path: WebDriverAgentRunner.ipa
+          name: WebDriverAgentRunner-signed
+          path: WebDriverAgentRunner-signed.ipa
           retention-days: 30
